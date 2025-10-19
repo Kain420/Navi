@@ -14,7 +14,7 @@ from telegram.ext import (
 
 TOKEN = os.environ.get("TOKEN")
 PORT = int(os.environ.get("PORT", 5000))
-CHANNEL_ID = os.environ.get("3163296973")
+CHANNEL_ID = os.environ.get("-3163296973")
 
 # Категории, соответствующие хештегам в постах
 categories = ["информация", "тренировки", "рецепты"]
