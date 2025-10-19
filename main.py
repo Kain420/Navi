@@ -11,7 +11,7 @@ from telegram.ext import (
 )
 
 # Читаем токен из переменных окружения
-TOKEN = os.environ.get("BOT_TOKEN")  # в Render добавь env var BOT_TOKEN=твой_токен
+TOKEN = os.environ.get("TOKEN")
 
 posts = [
     {"id": 1, "category": "Биология (исследования)", "text": "Новый метод секвенирования ДНК", "link": "https://t.me/yourchannel/1"},
@@ -54,7 +54,7 @@ async def search_posts(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     if not TOKEN:
-        raise ValueError("❌ Токен не найден! Убедись, что переменная окружения BOT_TOKEN установлена.")
+        raise ValueError("❌ Токен не найден! Убедись, что переменная окружения TOKEN установлена.")
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button))
