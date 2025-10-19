@@ -1,8 +1,17 @@
+# main.py
 import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, CallbackQueryHandler, MessageHandler, filters
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    ContextTypes,
+    CallbackQueryHandler,
+    MessageHandler,
+    filters,
+)
 
-TOKEN = os.environ.get("TOKEN")
+# Читаем токен из переменных окружения
+TOKEN = os.environ.get("BOT_TOKEN")  # в Render добавь env var BOT_TOKEN=твой_токен
 
 posts = [
     {"id": 1, "category": "Биология (исследования)", "text": "Новый метод секвенирования ДНК", "link": "https://t.me/yourchannel/1"},
@@ -43,13 +52,16 @@ async def search_posts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("Постов с таким словом не найдено.")
 
-if __name__ == "__main__":
+def main():
     if not TOKEN:
-        raise ValueError("❌ Токен не найден! Убедись, что переменная окружения TOKEN установлена.")
+        raise ValueError("❌ Токен не найден! Убедись, что переменная окружения BOT_TOKEN установлена.")
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search_posts))
 
-    import asyncio
-    asyncio.run(app.run_polling())
+    # ВАЖНО: не оборачиваем в asyncio.run — run_polling() уже запускает event loop
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()
