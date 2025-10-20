@@ -1,6 +1,5 @@
 # main_webhook.py
 import os
-import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
@@ -10,16 +9,16 @@ from telegram.ext import (
     MessageHandler,
     filters,
 )
+from telegram.constants import ParseMode
 
 TOKEN = os.environ.get("TOKEN")
 CHANNEL_ID = os.environ.get("CHANNEL_ID")
 PORT = int(os.environ.get("PORT", 5000))
-WEBHOOK_BASE_URL = os.environ.get("WEBHOOK_BASE_URL")
+WEBHOOK_BASE_URL = os.environ.get("WEBHOOK_BASE_URL")  # https://your-app.onrender.com
 
 if not TOKEN or not CHANNEL_ID or not WEBHOOK_BASE_URL:
     raise ValueError("Не установлены TOKEN, CHANNEL_ID или WEBHOOK_BASE_URL")
 
-# webhook path — можно сделать уникальным
 WEBHOOK_PATH = f"/webhook/{TOKEN}"
 WEBHOOK_URL = f"{WEBHOOK_BASE_URL}{WEBHOOK_PATH}"
 
@@ -30,22 +29,33 @@ categories = ["биология", "тренировки", "рецепты"]
 posts = []
 
 # ================== Получение последних постов из канала ==================
-async def fetch_channel_posts(context: ContextTypes.DEFAULT_TYPE, limit: int = 100):
+async def fetch_channel_posts(bot, limit: int = 100):
+    """
+    bot: instance of telegram.Bot (или context.bot)
+    Заполняет глобальный posts.
+    """
     global posts
     posts = []
-    chat = await context.bot.get_chat(CHANNEL_ID)
-    # get_chat_history доступен как async iterator
-    async for msg in context.bot.get_chat_history(chat.id, limit=limit):
-        text = (msg.text or "") + (("\n" + msg.caption) if getattr(msg, "caption", None) else "")
-        if text.strip():
-            # для приватных каналов ссылка формируется через /c/<channel_id_without_prefix>/<msg_id>
-            # chat.id для приватного канала обычно -100XXXXXXXXX
-            link = f"https://t.me/c/{str(chat.id)[4:]}/{msg.message_id}"
-            posts.append({"id": msg.message_id, "text": text, "link": link})
+    try:
+        chat = await bot.get_chat(CHANNEL_ID)
+        # get_chat_history может быть доступен как async iterator
+        # Некоторые версии PTB предоставляют bot.get_chat_history(chat_id, limit=...)
+        # если у вашей версии API нет get_chat_history, замените на подходящий метод.
+        async for msg in bot.get_chat_history(chat.id, limit=limit):
+            text = (msg.text or "") + (("\n" + msg.caption) if getattr(msg, "caption", None) else "")
+            if text.strip():
+                # для приватных каналов ссылка формируется через /c/<channel_id_without_prefix>/<msg_id>
+                # chat.id для приватного канала обычно -100XXXXXXXXX
+                link = f"https://t.me/c/{str(chat.id)[4:]}/{msg.message_id}"
+                posts.append({"id": msg.message_id, "text": text, "link": link})
+        print(f"Fetched {len(posts)} posts from channel {CHANNEL_ID}")
+    except Exception as e:
+        print("Ошибка при fetch_channel_posts:", e)
 
 # ================== Хендлеры ==================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await fetch_channel_posts(context)  # обновляем кеш при старте
+    # обновляем кеш при старте (в хендлере есть context)
+    await fetch_channel_posts(context.bot)
     keyboard = [[InlineKeyboardButton(cat.capitalize(), callback_data=f"cat_{cat}")] for cat in categories]
     keyboard.append([InlineKeyboardButton("Поиск 🔍", callback_data="search")])
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -60,7 +70,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cat_posts = [p for p in posts if f"#{cat_name}" in p["text"].lower()]
         if cat_posts:
             text = "\n\n".join([f"{p['text']}\n[Перейти к посту]({p['link']})" for p in cat_posts])
-            await query.message.reply_text(text, parse_mode="Markdown")
+            await query.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
         else:
             await query.message.reply_text("Постов нет.")
     elif data == "search":
@@ -71,19 +81,9 @@ async def search_posts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     found = [p for p in posts if keyword in p["text"].lower()]
     if found:
         text = "\n\n".join([f"{p['text']}\n[Перейти к посту]({p['link']})" for p in found])
-        await update.message.reply_text(text, parse_mode="Markdown")
+        await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
     else:
         await update.message.reply_text("Постов с таким словом не найдено.")
-
-# ================== Помощная задача обновления кеша (опционально) ==================
-async def periodic_fetch(application, interval_minutes=5):
-    while True:
-        try:
-            print("Обновляю кеш постов из канала...")
-            await fetch_channel_posts(ContextTypes.DEFAULT_TYPE(bot=application.bot))
-        except Exception as e:
-            print("Ошибка при обновлении постов:", e)
-        await asyncio.sleep(interval_minutes * 60)
 
 # ================== Запуск приложения в webhook-режиме ==================
 def main():
@@ -93,25 +93,25 @@ def main():
     app.add_handler(CallbackQueryHandler(button))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search_posts))
 
-    # Перед запуском удаляем старый webhook (на всякий)
-    async def _run():
-        # удаляем прежний webhook (если был) — безопасно
-        await app.bot.delete_webhook(drop_pending_updates=True)
-        print("Deleted previous webhook (if existed).")
+    # Используем JobQueue для периодического обновления кеша (правильно для PTB)
+    async def job_fetch(context: ContextTypes.DEFAULT_TYPE):
+        try:
+            await fetch_channel_posts(context.bot)
+        except Exception as e:
+            print("Ошибка в job_fetch:", e)
 
-        # Запуск периодической задачи обновления кеша (опционально)
-        app.create_task(periodic_fetch(app, interval_minutes=5))
+    # Запланируем задачу: каждые 5 минут (300 сек)
+    # run_repeating принимает coroutine callback
+    app.job_queue.run_repeating(job_fetch, interval=300, first=5)
 
-        # Устанавливаем новый webhook и запускаем встроенный веб-сервер
-        print("Setting webhook to:", WEBHOOK_URL)
-        await app.bot.set_webhook(WEBHOOK_URL)
-
-    # asyncio.run для начальной настройки и запуска собственного сервера
-    # run_webhook запустит event loop и не вернётся до остановки
-    asyncio.run(_run())
     print("Starting webhook server...")
-    # слушаем на PORT, путь = WEBHOOK_PATH
-    app.run_webhook(listen="0.0.0.0", port=PORT, url_path=WEBHOOK_PATH, webhook_url=WEBHOOK_URL)
+    # run_webhook сам поднимет event loop и установит webhook если передан webhook_url
+    app.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        url_path=WEBHOOK_PATH,
+        webhook_url=WEBHOOK_URL,
+    )
 
 if __name__ == "__main__":
     main()
