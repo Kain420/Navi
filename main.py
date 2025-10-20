@@ -1,5 +1,6 @@
-# main_webhook.py
+# main_polling.py
 import os
+import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
@@ -13,14 +14,9 @@ from telegram.constants import ParseMode
 
 TOKEN = os.environ.get("TOKEN")
 CHANNEL_ID = os.environ.get("CHANNEL_ID")
-PORT = int(os.environ.get("PORT", 5000))
-WEBHOOK_BASE_URL = os.environ.get("WEBHOOK_BASE_URL")  # https://your-app.onrender.com
 
-if not TOKEN or not CHANNEL_ID or not WEBHOOK_BASE_URL:
-    raise ValueError("Не установлены TOKEN, CHANNEL_ID или WEBHOOK_BASE_URL")
-
-WEBHOOK_PATH = f"/webhook/{TOKEN}"
-WEBHOOK_URL = f"{WEBHOOK_BASE_URL}{WEBHOOK_PATH}"
+if not TOKEN or not CHANNEL_ID:
+    raise ValueError("Не установлены TOKEN или CHANNEL_ID (передайте через env).")
 
 categories = ["биология", "тренировки", "рецепты"]
 posts = []
@@ -31,9 +27,11 @@ async def fetch_channel_posts(bot, limit: int = 100):
     posts = []
     try:
         chat = await bot.get_chat(CHANNEL_ID)
+        # Используем асинхронный итератор истории, если доступен
         async for msg in bot.get_chat_history(chat.id, limit=limit):
             text = (msg.text or "") + (("\n" + msg.caption) if getattr(msg, "caption", None) else "")
             if text.strip():
+                # Для приватного канала ссылка: https://t.me/c/<id_without_-100>/<msg_id>
                 link = f"https://t.me/c/{str(chat.id)[4:]}/{msg.message_id}"
                 posts.append({"id": msg.message_id, "text": text, "link": link})
         print(f"Fetched {len(posts)} posts from channel {CHANNEL_ID}")
@@ -42,6 +40,7 @@ async def fetch_channel_posts(bot, limit: int = 100):
 
 # ================== Хендлеры ==================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Подгружаем кеш при первом /start
     await fetch_channel_posts(context.bot)
     keyboard = [[InlineKeyboardButton(cat.capitalize(), callback_data=f"cat_{cat}")] for cat in categories]
     keyboard.append([InlineKeyboardButton("Поиск 🔍", callback_data="search")])
@@ -72,7 +71,20 @@ async def search_posts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("Постов с таким словом не найдено.")
 
-# ================== Запуск приложения ==================
+# ================== Фоновая задача для периодического обновления ==================
+async def periodic_fetch(bot, interval: int = 300):
+    """Сразу делает fetch и затем повторяет каждые `interval` секунд."""
+    try:
+        while True:
+            try:
+                await fetch_channel_posts(bot)
+            except Exception as e:
+                print("Ошибка в периодическом обновлении:", e)
+            await asyncio.sleep(interval)
+    except asyncio.CancelledError:
+        print("periodic_fetch cancelled, завершаю.")
+
+# ================== Запуск приложения (polling) ==================
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
@@ -80,23 +92,18 @@ def main():
     app.add_handler(CallbackQueryHandler(button))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search_posts))
 
-    # JobQueue для периодического обновления кеша
-    async def job_fetch(context: ContextTypes.DEFAULT_TYPE):
-        try:
-            await fetch_channel_posts(context.bot)
-        except Exception as e:
-            print("Ошибка в job_fetch:", e)
+    # Запускаем polling и фоновую таску, используя app.create_task,
+    # чтобы таска стартовала в общем event loop приложения.
+    async def _startup_tasks(application):
+        # создаём фоновую таску; она начнёт работать, когда запустится цикл
+        application.create_task(periodic_fetch(application.bot, interval=300))
 
-    # В PTB 21.1 JobQueue создаётся автоматически
-    app.job_queue.run_repeating(job_fetch, interval=300, first=5)
+    # Регистрируем post_init, чтобы таска создалась после запуска приложения
+    app.post_init = _startup_tasks
 
-    print("Starting webhook server...")
-    app.run_webhook(
-        listen="0.0.0.0",
-        port=PORT,
-        url_path=WEBHOOK_PATH,
-        webhook_url=WEBHOOK_URL,
-    )
+    print("Запуск polling...")
+    # run_polling запускает event loop и блокирует текущий поток
+    app.run_polling()
 
 if __name__ == "__main__":
     main()
