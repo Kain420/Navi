@@ -14,7 +14,7 @@ from telegram.constants import ParseMode
 TOKEN = os.environ.get("TOKEN")
 CHANNEL_ID = os.environ.get("CHANNEL_ID")
 PORT = int(os.environ.get("PORT", 5000))
-WEBHOOK_BASE_URL = os.environ.get("WEBHOOK_BASE_URL")
+WEBHOOK_BASE_URL = os.environ.get("WEBHOOK_BASE_URL")  # https://your-app.onrender.com
 
 if not TOKEN or not CHANNEL_ID or not WEBHOOK_BASE_URL:
     raise ValueError("Не установлены TOKEN, CHANNEL_ID или WEBHOOK_BASE_URL")
@@ -74,22 +74,20 @@ async def search_posts(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ================== Запуск приложения ==================
 def main():
-    app = (
-        ApplicationBuilder()
-        .token(TOKEN) # <- Важно!
-        .build()
-    )
+    app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search_posts))
 
+    # JobQueue для периодического обновления кеша
     async def job_fetch(context: ContextTypes.DEFAULT_TYPE):
         try:
             await fetch_channel_posts(context.bot)
         except Exception as e:
             print("Ошибка в job_fetch:", e)
 
+    # В PTB 21.1 JobQueue создаётся автоматически
     app.job_queue.run_repeating(job_fetch, interval=300, first=5)
 
     print("Starting webhook server...")
