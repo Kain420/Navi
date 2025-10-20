@@ -76,8 +76,7 @@ async def search_posts(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     app = (
         ApplicationBuilder()
-        .token(TOKEN)
-        .use_job_queue()  # <- Важно!
+        .token(TOKEN) # <- Важно!
         .build()
     )
 
