@@ -102,7 +102,7 @@ async def search_posts(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     found = [p for p in posts if keyword in p["text"].lower()]
     if found:
-        text = "\n\n".join([f"{p['text']}\n[Перейти к посту]({p['link']})" for p in found])
+        text = "\n\n".join(["#{} — {}\n{}".format(i+1, p['text'][:200].replace('\n',' '), p['link']) for i,p in enumerate(sample)])
         await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
     else:
         await update.message.reply_text("Постов с таким словом не найдено.")
