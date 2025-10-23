@@ -68,7 +68,7 @@ async def fetch_channel_posts(bot, limit: int = FETCH_LIMIT):
 
 # ======= Хендлеры команд / кнопок / поиска =======
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await fetch_channel_posts(context.bot)
+    # Убрал вызов fetch_channel_posts здесь - это делается в фоновой задаче
     keyboard = [[InlineKeyboardButton(cat.capitalize(), callback_data=f"cat_{cat}")] for cat in categories]
     keyboard.append([InlineKeyboardButton("Поиск 🔍", callback_data="search")])
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -83,10 +83,14 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cat_name = data[4:].lower()
         cat_posts = [p for p in posts if f"#{cat_name}" in p["text"].lower()]
         if cat_posts:
-            text = "\n\n".join([f"{p['text']}\n[Перейти к посту]({p['link']})" for p in cat_posts])
+            # Ограничиваем количество постов чтобы не превысить лимит длины сообщения
+            display_posts = cat_posts[:10]  # Показываем только первые 10
+            text = "\n\n".join([f"{p['text'][:500]}...\n[Перейти к посту]({p['link']})" for p in display_posts])
+            if len(cat_posts) > 10:
+                text += f"\n\n... и еще {len(cat_posts) - 10} постов"
             await query.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
         else:
-            await query.message.reply_text("Постов нет.")
+            await query.message.reply_text("Постов в этой категории пока нет.")
     elif data == "search":
         await query.message.reply_text("Напиши ключевое слово для поиска:")
 
@@ -101,7 +105,11 @@ async def search_posts(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     found = [p for p in posts if keyword in p["text"].lower()]
     if found:
-        text = "\n\n".join(["#{} — {}\n{}".format(i+1, p['text'][:200].replace('\n',' '), p['link']) for i,p in enumerate(sample)])
+        # Ограничиваем количество результатов
+        display_found = found[:10]  # Показываем только первые 10
+        text = "\n\n".join([f"#{i+1} — {p['text'][:200].replace(chr(10), ' ')}...\n{p['link']}" for i, p in enumerate(display_found)])
+        if len(found) > 10:
+            text += f"\n\n... и еще {len(found) - 10} результатов"
         await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
     else:
         await update.message.reply_text("Постов с таким словом не найдено.")
@@ -133,7 +141,7 @@ def build_application() -> "telegram.ext.Application":
 
     # При инициализации приложения создаём фоновую таску и сохраняем её
     async def _on_post_init(application):
-        task = application.create_task(periodic_fetch(application.bot))
+        task = asyncio.create_task(periodic_fetch(application.bot))
         application.bot_data["periodic_task"] = task
         log.info("periodic_fetch task created")
 
@@ -183,6 +191,8 @@ def run():
 
 if __name__ == "__main__":
     run()
+
+
 
 # #!/usr/bin/env python3
 # # worker.py — polling worker for a Telegram navigation bot (for Render)
