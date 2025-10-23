@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-# worker.py — polling worker for a Telegram navigation bot (for Render)
+# worker.py — webhook worker for a Telegram navigation bot (for Render)
 import os
 import asyncio
 import signal
 import logging
+from aiohttp import web
 from typing import List, Dict, Any
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -21,6 +22,8 @@ log = logging.getLogger("worker")
 
 TOKEN = os.environ.get("TOKEN")
 CHANNEL_ID = os.environ.get("CHANNEL_ID")
+RENDER_EXTERNAL_HOSTNAME = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
+PORT = int(os.environ.get('PORT', 8080))
 
 if not TOKEN or not CHANNEL_ID:
     raise ValueError("Не установлены TOKEN или CHANNEL_ID (передайте через env).")
@@ -48,7 +51,6 @@ async def fetch_channel_posts(bot, limit: int = FETCH_LIMIT):
         # Альтернативный способ получения сообщений
         try:
             # Пробуем получить последние сообщения через get_chat_history
-            # Для новой версии библиотеки
             history = []
             async for message in bot.get_chat_history(chat_id, limit=limit):
                 history.append(message)
@@ -182,62 +184,65 @@ async def periodic_fetch(bot, interval: int = FETCH_INTERVAL):
         log.info("periodic_fetch cancelled, finishing.")
 
 
-# ======= Запуск и graceful shutdown =======
-def build_application():
+# ======= Webhook и HTTP сервер =======
+async def health_check(request):
+    """Health check endpoint для Render"""
+    return web.Response(text="OK")
+
+
+async def main():
+    """Основная функция инициализации"""
+    # Создаем приложение Telegram
     app = ApplicationBuilder().token(TOKEN).build()
 
+    # Добавляем обработчики
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search_posts))
 
-    # При инициализации приложения создаём фоновую таску и сохраняем её
-    async def _on_post_init(application):
-        task = asyncio.create_task(periodic_fetch(application.bot))
-        application.bot_data["periodic_task"] = task
-        log.info("periodic_fetch task created")
+    # Запускаем фоновую задачу для периодического обновления постов
+    periodic_task = asyncio.create_task(periodic_fetch(app.bot))
+    
+    # Настраиваем webhook если есть внешний хостнейм
+    if RENDER_EXTERNAL_HOSTNAME:
+        webhook_url = f"https://{RENDER_EXTERNAL_HOSTNAME}/webhook"
+        await app.bot.set_webhook(webhook_url)
+        log.info(f"Webhook установлен: {webhook_url}")
+    else:
+        log.warning("RENDER_EXTERNAL_HOSTNAME не установлен, webhook не настроен")
 
-    app.post_init = _on_post_init
-    return app
+    # Создаем HTTP сервер для health checks
+    http_app = web.Application()
+    http_app.router.add_get('/', health_check)
+    http_app.router.add_post('/webhook', lambda req: app.update_queue.put(
+        Update.de_json(data=await req.json(), bot=app.bot)
+    ))
 
+    runner = web.AppRunner(http_app)
+    await runner.setup()
+    
+    site = web.TCPSite(runner, '0.0.0.0', PORT)
+    await site.start()
 
-def run():
-    app = build_application()
-
-    # Исправляем создание event loop
+    log.info(f"HTTP сервер запущен на порту {PORT}")
+    
     try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-    # Обработчики сигналов — чтобы аккуратно остановиться на SIGTERM (Render)
-    def _stop_on_signal(signame):
-        log.info("Got signal %s, stopping application...", signame)
-        # отменим фоновую таску, если она существует
-        task = app.bot_data.get("periodic_task")
-        if task and not task.done():
-            task.cancel()
-        # инициируем остановку приложения
-        asyncio.run_coroutine_threadsafe(app.stop(), loop)
-
-    for s in (signal.SIGINT, signal.SIGTERM):
-        try:
-            loop.add_signal_handler(s, lambda s=s: _stop_on_signal(s.name))
-        except NotImplementedError:
-            # Windows (возможно) — fallback на signal.signal
-            signal.signal(s, lambda *_args, s=s: _stop_on_signal(s.name))
-
-    log.info("Запуск polling...")
-    try:
-        app.run_polling()
-    except Exception:
-        log.exception("app.run_polling завершился с ошибкой")
+        # Запускаем приложение
+        await app.initialize()
+        await app.start()
+        await asyncio.Future()  # Бесконечное ожидание
+    except Exception as e:
+        log.exception("Ошибка в основном цикле")
     finally:
-        log.info("Worker stopped.")
+        # Корректное завершение
+        periodic_task.cancel()
+        await app.stop()
+        await app.shutdown()
+        await runner.cleanup()
 
 
 if __name__ == "__main__":
-    run()
+    asyncio.run(main())
 
 # #!/usr/bin/env python3
 # # worker.py — polling worker for a Telegram navigation bot (for Render)
