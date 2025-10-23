@@ -239,7 +239,6 @@ def run():
 if __name__ == "__main__":
     run()
 
-
 # #!/usr/bin/env python3
 # # worker.py — polling worker for a Telegram navigation bot (for Render)
 # import os
