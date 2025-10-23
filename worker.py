@@ -190,33 +190,46 @@ async def health_check(request):
     return web.Response(text="OK")
 
 
+async def webhook_handler(request):
+    """Обработчик webhook запросов от Telegram"""
+    try:
+        data = await request.json()
+        update = Update.de_json(data, request.app['bot'])
+        await request.app['application'].process_update(update)
+        return web.Response(text="OK")
+    except Exception as e:
+        log.exception("Ошибка в webhook_handler")
+        return web.Response(status=500, text="Error")
+
+
 async def main():
     """Основная функция инициализации"""
     # Создаем приложение Telegram
-    app = ApplicationBuilder().token(TOKEN).build()
+    application = ApplicationBuilder().token(TOKEN).build()
 
     # Добавляем обработчики
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(button))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search_posts))
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CallbackQueryHandler(button))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search_posts))
 
     # Запускаем фоновую задачу для периодического обновления постов
-    periodic_task = asyncio.create_task(periodic_fetch(app.bot))
+    periodic_task = asyncio.create_task(periodic_fetch(application.bot))
     
     # Настраиваем webhook если есть внешний хостнейм
     if RENDER_EXTERNAL_HOSTNAME:
         webhook_url = f"https://{RENDER_EXTERNAL_HOSTNAME}/webhook"
-        await app.bot.set_webhook(webhook_url)
+        await application.bot.set_webhook(webhook_url)
         log.info(f"Webhook установлен: {webhook_url}")
     else:
         log.warning("RENDER_EXTERNAL_HOSTNAME не установлен, webhook не настроен")
 
     # Создаем HTTP сервер для health checks
     http_app = web.Application()
+    http_app['bot'] = application.bot
+    http_app['application'] = application
+    
     http_app.router.add_get('/', health_check)
-    http_app.router.add_post('/webhook', lambda req: app.update_queue.put(
-        Update.de_json(data=await req.json(), bot=app.bot)
-    ))
+    http_app.router.add_post('/webhook', webhook_handler)
 
     runner = web.AppRunner(http_app)
     await runner.setup()
@@ -228,16 +241,24 @@ async def main():
     
     try:
         # Запускаем приложение
-        await app.initialize()
-        await app.start()
-        await asyncio.Future()  # Бесконечное ожидание
+        await application.initialize()
+        await application.start()
+        
+        # Бесконечное ожидание
+        while True:
+            await asyncio.sleep(3600)
     except Exception as e:
         log.exception("Ошибка в основном цикле")
     finally:
         # Корректное завершение
         periodic_task.cancel()
-        await app.stop()
-        await app.shutdown()
+        try:
+            await periodic_task
+        except asyncio.CancelledError:
+            pass
+        
+        await application.stop()
+        await application.shutdown()
         await runner.cleanup()
 
 
