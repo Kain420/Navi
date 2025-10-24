@@ -4,8 +4,9 @@ import os
 import asyncio
 import signal
 import logging
+from datetime import datetime
 from aiohttp import web
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
@@ -29,147 +30,383 @@ if not TOKEN or not CHANNEL_ID:
     raise ValueError("Не установлены TOKEN или CHANNEL_ID (передайте через env).")
 
 # Настройки
-FETCH_LIMIT = int(os.environ.get("FETCH_LIMIT", "100"))
-FETCH_INTERVAL = int(os.environ.get("FETCH_INTERVAL", "300"))
+FETCH_LIMIT = int(os.environ.get("FETCH_LIMIT", "500"))
+FETCH_INTERVAL = int(os.environ.get("FETCH_INTERVAL", "600"))
+POSTS_PER_PAGE = 5
 
 categories = ["биология", "тренировки", "рецепты"]
 posts: List[Dict[str, Any]] = []
+user_sessions = {}
 
-
-# ======= Функции работы с каналом =======
+# ======= УЛУЧШЕННЫЕ ФУНКЦИИ РАБОТЫ С КАНАЛОМ =======
 async def fetch_channel_posts(bot, limit: int = FETCH_LIMIT):
     """
-    Получаем посты из канала через get_updates или другие методы
+    Улучшенная функция получения постов из канала
     """
     global posts
     new_posts: List[Dict[str, Any]] = []
+    
     try:
-        log.info("Fetching channel info for %s", CHANNEL_ID)
-        chat = await bot.get_chat(CHANNEL_ID)
-        chat_id = chat.id
+        log.info(f"Получаем посты из канала {CHANNEL_ID}")
         
-        # Альтернативный способ получения сообщений
+        # Получаем информацию о канале
         try:
-            # Пробуем получить последние сообщения через get_chat_history
-            history = []
-            async for message in bot.get_chat_history(chat_id, limit=limit):
-                history.append(message)
-            
-            for msg in history:
-                text = (msg.text or "") + (("\n" + msg.caption) if msg.caption else "")
-                if not text.strip():
-                    continue
-                
-                # Формируем ссылку
-                sid = str(chat_id)
-                if sid.startswith("-100"):
-                    link = f"https://t.me/c/{sid[4:]}/{msg.message_id}"
-                else:
-                    username = chat.username if chat.username else sid
-                    link = f"https://t.me/{username}/{msg.message_id}"
-                
-                new_posts.append({
-                    "id": msg.message_id, 
-                    "text": text, 
-                    "link": link
-                })
-                
+            chat = await bot.get_chat(CHANNEL_ID)
+            log.info(f"Канал найден: {chat.title}")
         except Exception as e:
-            log.warning(f"Не удалось получить историю чата: {e}")
-            # Fallback: создаем тестовые данные
-            new_posts = [
-                {
-                    "id": 1,
-                    "text": "Тестовый пост про #биология",
-                    "link": "https://t.me/test/1"
-                },
-                {
-                    "id": 2, 
-                    "text": "Тестовый пост про #тренировки",
-                    "link": "https://t.me/test/2"
-                }
-            ]
-            log.info("Используются тестовые данные")
-        
+            log.error(f"Ошибка доступа к каналу: {e}")
+            return
+
+        # Получаем сообщения
+        message_count = 0
+        async for message in bot.get_chat_history(chat.id, limit=limit):
+            # Пропускаем служебные сообщения
+            if not message.text and not message.caption:
+                continue
+                
+            text = message.text or message.caption or ""
+            text_lower = text.lower()
+            
+            # Формируем ссылку на пост
+            if chat.username:
+                link = f"https://t.me/{chat.username}/{message.message_id}"
+            else:
+                # Для приватных каналов
+                link = f"https://t.me/c/{str(chat.id).replace('-100', '')}/{message.message_id}"
+            
+            # Извлекаем категории из хештегов
+            categories_found = []
+            for category in categories:
+                if f"#{category}" in text_lower:
+                    categories_found.append(category)
+            
+            new_posts.append({
+                "id": message.message_id,
+                "text": text,
+                "link": link,
+                "date": message.date,
+                "categories": categories_found
+            })
+            message_count += 1
+
+        # Сортируем по дате (новые сначала)
+        new_posts.sort(key=lambda x: x["date"], reverse=True)
         posts = new_posts
-        log.info("Fetched %d posts from channel %s", len(posts), CHANNEL_ID)
+        log.info(f"Успешно получено {len(posts)} постов")
         
     except Exception as e:
-        log.exception("Ошибка при fetch_channel_posts: %s", e)
+        log.exception(f"Критическая ошибка при получении постов: {e}")
         # Создаем тестовые данные при ошибке
         posts = [
             {
                 "id": 1,
-                "text": "Тестовый пост про #биология",
-                "link": "https://t.me/test/1"
+                "text": "Тестовый пост про #биология - изучение клеточного строения организмов",
+                "link": "https://t.me/test/1",
+                "date": datetime.now(),
+                "categories": ["биология"]
             },
             {
                 "id": 2, 
-                "text": "Тестовый пост про #тренировки", 
-                "link": "https://t.me/test/2"
+                "text": "Тестовый пост про #тренировки - программа силовых упражнений", 
+                "link": "https://t.me/test/2",
+                "date": datetime.now(),
+                "categories": ["тренировки"]
+            },
+            {
+                "id": 3,
+                "text": "Тестовый пост про #рецепты - полезный завтрак",
+                "link": "https://t.me/test/3",
+                "date": datetime.now(),
+                "categories": ["рецепты"]
             }
         ]
+        log.info("Используются тестовые данные")
 
+# ======= УЛУЧШЕННАЯ НАВИГАЦИЯ С ПАГИНАЦИЕЙ =======
+async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обновленное главное меню со статистикой"""
+    # Статистика по категориям
+    stats = {}
+    for category in categories:
+        count = len([p for p in posts if category in p.get("categories", [])])
+        stats[category] = count
 
-# ======= Хендлеры команд / кнопок / поиска =======
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [[InlineKeyboardButton(cat.capitalize(), callback_data=f"cat_{cat}")] for cat in categories]
-    keyboard.append([InlineKeyboardButton("Поиск 🔍", callback_data="search")])
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("Привет! Выбери категорию или используй поиск:", reply_markup=reply_markup)
+    text = "🏠 **Главное меню**\n\n"
+    text += f"📊 В базе {len(posts)} постов:\n"
+    for category in categories:
+        text += f"  • {category.capitalize()}: {stats[category]} постов\n"
+    
+    text += "\nВыберите действие:"
 
+    keyboard = []
+    for category in categories:
+        count = stats[category]
+        keyboard.append([
+            InlineKeyboardButton(
+                f"{category.capitalize()} ({count})", 
+                callback_data=f"cat_{category}_0"
+            )
+        ])
+    
+    keyboard.extend([
+        [InlineKeyboardButton("🔍 Поиск по ключевым словам", callback_data="search")],
+        [InlineKeyboardButton("🔄 Обновить базу постов", callback_data="refresh_posts")],
+        [InlineKeyboardButton("📢 Наш канал", url=f"https://t.me/{CHANNEL_ID.replace('@', '')}")]
+    ])
 
-async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.callback_query:
+        await update.callback_query.edit_message_text(
+            text, 
+            reply_markup=InlineKeyboardMarkup(keyboard), 
+            parse_mode=ParseMode.MARKDOWN
+        )
+    else:
+        await update.message.reply_text(
+            text, 
+            reply_markup=InlineKeyboardMarkup(keyboard), 
+            parse_mode=ParseMode.MARKDOWN
+        )
+
+async def show_category_posts(update: Update, context: ContextTypes.DEFAULT_TYPE, 
+                            category: str, page: int = 0):
+    """Показываем посты категории с пагинацией"""
     query = update.callback_query
     await query.answer()
-    data = query.data or ""
-    if data.startswith("cat_"):
-        cat_name = data[4:].lower()
-        cat_posts = [p for p in posts if f"#{cat_name}" in p["text"].lower()]
-        if cat_posts:
-            # Ограничиваем количество постов чтобы не превысить лимит длины сообщения
-            display_posts = cat_posts[:5]  # Показываем только первые 5
-            text_parts = []
-            for p in display_posts:
-                post_text = p['text'][:300] + "..." if len(p['text']) > 300 else p['text']
-                text_parts.append(f"{post_text}\n[Перейти к посту]({p['link']})")
-            
-            text = "\n\n".join(text_parts)
-            if len(cat_posts) > 5:
-                text += f"\n\n... и еще {len(cat_posts) - 5} постов"
-            await query.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
-        else:
-            await query.message.reply_text("Постов в этой категории пока нет.")
-    elif data == "search":
-        await query.message.reply_text("Напиши ключевое слово для поиска:")
+    
+    cat_posts = [p for p in posts if category in p.get("categories", [])]
+    
+    if not cat_posts:
+        await query.edit_message_text(
+            f"В категории '{category}' пока нет постов.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Назад", callback_data="main_menu")]])
+        )
+        return
 
+    # Пагинация
+    total_pages = (len(cat_posts) - 1) // POSTS_PER_PAGE + 1
+    start_idx = page * POSTS_PER_PAGE
+    end_idx = start_idx + POSTS_PER_PAGE
+    page_posts = cat_posts[start_idx:end_idx]
+
+    # Формируем сообщение
+    text = f"📁 **{category.upper()}**\n\n"
+    for i, post in enumerate(page_posts, 1):
+        preview = post['text'][:100] + "..." if len(post['text']) > 100 else post['text']
+        text += f"{start_idx + i}. {preview}\n\n"
+
+    text += f"Страница {page + 1} из {total_pages}"
+
+    # Клавиатура с пагинацией
+    keyboard = []
+    for post in page_posts:
+        preview = post['text'][:30] + "..." if len(post['text']) > 30 else post['text']
+        keyboard.append([InlineKeyboardButton(
+            f"📄 {preview}", 
+            callback_data=f"post_{post['id']}"
+        )])
+    
+    # Кнопки навигации
+    nav_buttons = []
+    if page > 0:
+        nav_buttons.append(InlineKeyboardButton("⬅️ Назад", callback_data=f"cat_{category}_{page-1}"))
+    if page < total_pages - 1:
+        nav_buttons.append(InlineKeyboardButton("Вперед ➡️", callback_data=f"cat_{category}_{page+1}"))
+    
+    if nav_buttons:
+        keyboard.append(nav_buttons)
+    
+    keyboard.append([InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")])
+
+    await query.edit_message_text(
+        text, 
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode=ParseMode.MARKDOWN
+    )
+
+async def show_post_detail(update: Update, context: ContextTypes.DEFAULT_TYPE, post_id: int):
+    """Показываем полный текст поста"""
+    query = update.callback_query
+    await query.answer()
+    
+    post = next((p for p in posts if p['id'] == post_id), None)
+    
+    if not post:
+        await query.answer("Пост не найден", show_alert=True)
+        return
+
+    # Обрезаем текст если слишком длинный
+    display_text = post['text']
+    if len(display_text) > 4000:
+        display_text = display_text[:4000] + "...\n\n[Текст обрезан, читайте полную версию по ссылке]"
+    
+    text = f"{display_text}\n\n🔗 [Открыть оригинал]({post['link']})"
+    
+    # Показываем категории поста
+    if post.get('categories'):
+        categories_text = ", ".join([f"#{cat}" for cat in post['categories']])
+        text = f"**Категории:** {categories_text}\n\n" + text
+    
+    keyboard = [
+        [InlineKeyboardButton("📂 К категориям", callback_data="main_menu")],
+        [InlineKeyboardButton("🔍 Новый поиск", callback_data="search")]
+    ]
+    
+    await query.edit_message_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode=ParseMode.MARKDOWN,
+        disable_web_page_preview=False
+    )
 
 async def search_posts(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Улучшенный поиск с пагинацией"""
+    if update.message:
+        keyword = update.message.text.lower().strip()
+        context.user_data['current_search'] = keyword
+        context.user_data['search_page'] = 0
+        current_page = 0
+    else:
+        query = update.callback_query
+        await query.answer()
+        data = query.data.split('_')
+        keyword = context.user_data.get('current_search', '')
+        current_page = int(data[1]) if len(data) > 1 else 0
+        context.user_data['search_page'] = current_page
+
+    if not keyword:
+        if update.message:
+            await update.message.reply_text("Введите слово или фразу для поиска:")
+        return
+
+    found_posts = [p for p in posts if keyword in p["text"].lower()]
+    
+    if not found_posts:
+        text = f"🔍 По запросу '{keyword}' ничего не найдено."
+        keyboard = [[InlineKeyboardButton("🔍 Новый поиск", callback_data="search")],
+                   [InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]]
+        
+        if update.message:
+            await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+        else:
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+        return
+
+    # Пагинация для поиска
+    total_pages = (len(found_posts) - 1) // POSTS_PER_PAGE + 1
+    start_idx = current_page * POSTS_PER_PAGE
+    end_idx = start_idx + POSTS_PER_PAGE
+    page_posts = found_posts[start_idx:end_idx]
+
+    text = f"🔍 **Результаты поиска по '{keyword}'**\n\n"
+    text += f"📄 Найдено: {len(found_posts)} постов\n\n"
+
+    keyboard = []
+    for i, post in enumerate(page_posts, 1):
+        # Подсветка найденных слов
+        preview = post['text']
+        if len(preview) > 100:
+            # Находим позицию ключевого слова
+            keyword_pos = preview.lower().find(keyword)
+            start = max(0, keyword_pos - 50)
+            end = min(len(preview), keyword_pos + 50)
+            preview = "..." + preview[start:end] + "..."
+        
+        # Заменяем для маркдауна
+        preview = preview.replace('*', '★').replace('_', ' ').replace('`', "'")
+        button_text = f"📄 {preview[:40]}..." if len(preview) > 40 else f"📄 {preview}"
+        
+        keyboard.append([InlineKeyboardButton(
+            button_text, 
+            callback_data=f"post_{post['id']}"
+        )])
+
+    # Кнопки навигации
+    nav_buttons = []
+    if current_page > 0:
+        nav_buttons.append(InlineKeyboardButton("⬅️", callback_data=f"search_{current_page-1}"))
+    
+    nav_buttons.append(InlineKeyboardButton(f"{current_page+1}/{total_pages}", callback_data="none"))
+    
+    if current_page < total_pages - 1:
+        nav_buttons.append(InlineKeyboardButton("➡️", callback_data=f"search_{current_page+1}"))
+    
+    if nav_buttons:
+        keyboard.append(nav_buttons)
+
+    keyboard.extend([
+        [InlineKeyboardButton("🔍 Новый поиск", callback_data="search")],
+        [InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]
+    ])
+
+    if update.message:
+        await update.message.reply_text(
+            text, 
+            reply_markup=InlineKeyboardMarkup(keyboard), 
+            parse_mode=ParseMode.MARKDOWN
+        )
+    else:
+        await query.edit_message_text(
+            text, 
+            reply_markup=InlineKeyboardMarkup(keyboard), 
+            parse_mode=ParseMode.MARKDOWN
+        )
+
+# ======= ОБРАБОТЧИКИ КОМАНД И КНОПОК =======
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик команды /start"""
+    await show_main_menu(update, context)
+
+async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик нажатий на кнопки"""
+    query = update.callback_query
+    data = query.data
+
+    if data == "main_menu":
+        await show_main_menu(update, context)
+    elif data == "search":
+        await query.edit_message_text("Введите слово или фразу для поиска:")
+    elif data.startswith("cat_"):
+        parts = data.split("_")
+        category = parts[1]
+        page = int(parts[2]) if len(parts) > 2 else 0
+        await show_category_posts(update, context, category, page)
+    elif data.startswith("post_"):
+        post_id = int(data.split("_")[1])
+        await show_post_detail(update, context, post_id)
+    elif data.startswith("search_"):
+        await search_posts(update, context)
+    elif data == "refresh_posts":
+        await query.edit_message_text("🔄 Обновляем базу постов...")
+        await fetch_channel_posts(context.application.bot)
+        await show_main_menu(update, context)
+    elif data == "none":
+        await query.answer()
+    else:
+        await query.answer("Неизвестная команда", show_alert=True)
+
+async def force_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Принудительное обновление базы постов"""
+    await update.message.reply_text("🔄 Начинаем обновление базы постов...")
+    await fetch_channel_posts(context.application.bot)
+    await show_main_menu(update, context)
+
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик текстовых сообщений"""
     if not update.message or not update.message.text:
         return
-    keyword = update.message.text.lower().strip()
-    if not keyword:
-        await update.message.reply_text("Пустой запрос.")
-        return
-    found = [p for p in posts if keyword in p["text"].lower()]
-    if found:
-        # Ограничиваем количество результатов
-        display_found = found[:5]  # Показываем только первые 5
-        text_parts = []
-        for i, p in enumerate(display_found):
-            preview = p['text'][:150].replace('\n', ' ') + "..." if len(p['text']) > 150 else p['text']
-            text_parts.append(f"#{i+1} — {preview}\n{p['link']}")
         
-        text = "\n\n".join(text_parts)
-        if len(found) > 5:
-            text += f"\n\n... и еще {len(found) - 5} результатов"
-        await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+    text = update.message.text.strip()
+    
+    # Если сообщение начинается с /, но команда не распознана
+    if text.startswith('/'):
+        await update.message.reply_text("Неизвестная команда. Используйте /start для начала работы.")
     else:
-        await update.message.reply_text("Постов с таким словом не найдено.")
+        # Если это не команда, считаем что это поисковый запрос
+        await search_posts(update, context)
 
-
-# ======= Фоновая таска =======
+# ======= ФОНОВАЯ ЗАДАЧА ДЛЯ ОБНОВЛЕНИЯ ПОСТОВ =======
 async def periodic_fetch(bot, interval: int = FETCH_INTERVAL):
+    """Фоновая задача для периодического обновления постов"""
     log.info("periodic_fetch started, interval=%s sec", interval)
     try:
         # делаем initial fetch сразу при старте
@@ -178,17 +415,16 @@ async def periodic_fetch(bot, interval: int = FETCH_INTERVAL):
             await asyncio.sleep(interval)
             try:
                 await fetch_channel_posts(bot)
+                log.info("Периодическое обновление постов завершено")
             except Exception:
                 log.exception("Ошибка в периодическом обновлении")
     except asyncio.CancelledError:
         log.info("periodic_fetch cancelled, finishing.")
 
-
-# ======= Webhook и HTTP сервер =======
+# ======= WEBHOOK И HTTP СЕРВЕР =======
 async def health_check(request):
     """Health check endpoint для Render"""
     return web.Response(text="OK")
-
 
 async def webhook_handler(request):
     """Обработчик webhook запросов от Telegram"""
@@ -201,7 +437,6 @@ async def webhook_handler(request):
         log.exception("Ошибка в webhook_handler")
         return web.Response(status=500, text="Error")
 
-
 async def main():
     """Основная функция инициализации"""
     # Создаем приложение Telegram
@@ -209,8 +444,9 @@ async def main():
 
     # Добавляем обработчики
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("update", force_update))
     application.add_handler(CallbackQueryHandler(button))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search_posts))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     # Запускаем фоновую задачу для периодического обновления постов
     periodic_task = asyncio.create_task(periodic_fetch(application.bot))
@@ -260,7 +496,6 @@ async def main():
         await application.stop()
         await application.shutdown()
         await runner.cleanup()
-
 
 if __name__ == "__main__":
     asyncio.run(main())
