@@ -16,7 +16,8 @@ API_HASH = os.environ.get("API_HASH")
 SESSION_STRING = os.environ.get("SESSION_STRING")
 SOURCE_CHANNEL = int(os.environ.get("SOURCE_CHANNEL"))
 TOKEN = os.environ.get("TOKEN")
-PORT = int(os.environ.get('PORT', 8080))
+PORT = int(os.environ.get('PORT', 10000))  # Render использует порт 10000
+RENDER_EXTERNAL_HOSTNAME = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
 
 # Проверка переменных
 required_vars = ["API_ID", "API_HASH", "SESSION_STRING", "SOURCE_CHANNEL", "TOKEN"]
@@ -30,15 +31,16 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, Callb
 from telegram.constants import ParseMode
 from telethon import TelegramClient
 from telethon.sessions import StringSession
+from telethon.tl.types import MessageService  # Добавляем импорт для обработки служебных сообщений
 
 # Данные
-categories = ["статьи про сон", "статьи про тренировки", "рецепты"]
+categories = ["биология", "тренировки", "рецепты"]
 posts = []
 channel_info = {"title": "Неизвестно", "username": None, "link": "#"}
 telethon_client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
 async def fetch_channel_posts():
-    """Получение постов из канала"""
+    """Исправленное получение постов из канала"""
     global posts, channel_info
     try:
         log.info("Подключаемся к Telegram через Telethon...")
@@ -60,13 +62,17 @@ async def fetch_channel_posts():
         
         new_posts = []
         async for message in telethon_client.iter_messages(entity, limit=100):
+            # Пропускаем служебные сообщения
+            if isinstance(message, MessageService):
+                continue
+                
             # Получаем текст
             text = ""
-            if message.text:
+            if hasattr(message, 'text') and message.text:
                 text = message.text
-            elif message.caption:
+            elif hasattr(message, 'caption') and message.caption:
                 text = message.caption
-            elif message.message:
+            elif hasattr(message, 'message') and message.message:
                 text = message.message
             
             if not text:
@@ -106,20 +112,22 @@ async def fetch_channel_posts():
         posts = [
             {
                 "id": 1, 
-                "text": "Тестовый пост #статьи про сон про клетки", 
+                "text": "Тестовый пост #биология про клетки", 
                 "link": "https://t.me/test/1", 
-                "categories": ["статьи про сон"]
+                "categories": ["биология"]
             },
             {
                 "id": 2, 
-                "text": "Тестовый пост #статьи про тренировки программа упражнений", 
+                "text": "Тестовый пост #тренировки программа упражнений", 
                 "link": "https://t.me/test/2", 
-                "categories": ["статьи про тренировки"]
+                "categories": ["тренировки"]
             }
         ]
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Команда /start"""
+    log.info(f"Получена команда /start от пользователя {update.effective_user.id}")
+    
     stats = {}
     for category in categories:
         count = len([p for p in posts if category in p["categories"]])
@@ -437,7 +445,15 @@ async def health_check(request):
     return web.Response(text="OK")
 
 async def webhook_handler(request):
-    return web.Response(text="OK")
+    """Обработчик вебхуков от Telegram"""
+    try:
+        data = await request.json()
+        update = Update.de_json(data, request.app['application'].bot)
+        await request.app['application'].process_update(update)
+        return web.Response(text="OK")
+    except Exception as e:
+        log.error(f"Ошибка в обработчике вебхука: {e}")
+        return web.Response(status=500, text="Error")
 
 async def main():
     """Основная функция"""
@@ -449,12 +465,26 @@ async def main():
     
     # Создание бота
     application = ApplicationBuilder().token(TOKEN).build()
+    
+    # Добавляем обработчики
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(button_handler))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    # HTTP сервер
+    # Настройка вебхука
+    if RENDER_EXTERNAL_HOSTNAME:
+        webhook_url = f"https://{RENDER_EXTERNAL_HOSTNAME}/webhook"
+        await application.bot.set_webhook(webhook_url)
+        log.info(f"Вебхук установлен: {webhook_url}")
+    else:
+        log.warning("RENDER_EXTERNAL_HOSTNAME не установлен, вебхук не настроен")
+        # Вместо вебхука используем polling для тестирования
+        log.info("Используем polling вместо вебхука")
+    
+    # HTTP сервер для health checks и вебхуков
     http_app = web.Application()
+    http_app['application'] = application
+    
     http_app.router.add_get('/', health_check)
     http_app.router.add_post('/webhook', webhook_handler)
     
@@ -469,6 +499,11 @@ async def main():
     # Запуск бота
     await application.initialize()
     await application.start()
+    
+    # Если вебхук не настроен, используем polling
+    if not RENDER_EXTERNAL_HOSTNAME:
+        log.info("Запускаем polling...")
+        await application.updater.start_polling()
     
     # Бесконечный цикл
     try:
