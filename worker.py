@@ -260,6 +260,132 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         log.error(f"Ошибка в show_main_menu: {e}")
         await handle_error(update, context)
 
+async def show_category_posts(update: Update, context: ContextTypes.DEFAULT_TYPE, 
+                            category: str, page: int = 0):
+    """Показываем посты категории с пагинацией"""
+    query = update.callback_query
+    await query.answer()
+    
+    cat_posts = [p for p in posts if category in p.get("categories", [])]
+    
+    if not cat_posts:
+        await query.edit_message_text(
+            f"В категории '{category}' пока нет постов.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Назад", callback_data="main_menu")]])
+        )
+        return
+
+    total_pages = (len(cat_posts) - 1) // POSTS_PER_PAGE + 1
+    start_idx = page * POSTS_PER_PAGE
+    end_idx = start_idx + POSTS_PER_PAGE
+    page_posts = cat_posts[start_idx:end_idx]
+
+    text = f"📁 **{category.upper()}**\n\n"
+    for i, post in enumerate(page_posts, 1):
+        preview = post['text'][:100] + "..." if len(post['text']) > 100 else post['text']
+        text += f"{start_idx + i}. {preview}\n\n"
+    text += f"Страница {page + 1} из {total_pages}"
+
+    keyboard = []
+    for post in page_posts:
+        preview = post['text'][:30] + "..." if len(post['text']) > 30 else post['text']
+        keyboard.append([InlineKeyboardButton(f"📄 {preview}", callback_data=f"post_{post['id']}")])
+    
+    nav_buttons = []
+    if page > 0:
+        nav_buttons.append(InlineKeyboardButton("⬅️ Назад", callback_data=f"cat_{category}_{page-1}"))
+    if page < total_pages - 1:
+        nav_buttons.append(InlineKeyboardButton("Вперед ➡️", callback_data=f"cat_{category}_{page+1}"))
+    
+    if nav_buttons:
+        keyboard.append(nav_buttons)
+    keyboard.append([InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")])
+
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
+
+
+async def search_posts(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Поиск постов с кнопкой Назад"""
+    if update.message:
+        keyword = update.message.text.lower().strip()
+        
+        # Если пользователь написал "отмена" или "назад", возвращаем в главное меню
+        if keyword in ['отмена', 'назад', 'cancel']:
+            await show_main_menu(update, context)
+            return
+            
+        context.user_data['current_search'] = keyword
+        context.user_data['search_page'] = 0
+        current_page = 0
+    else:
+        query = update.callback_query
+        await query.answer()
+        data = query.data.split('_')
+        keyword = context.user_data.get('current_search', '')
+        current_page = int(data[1]) if len(data) > 1 else 0
+        context.user_data['search_page'] = current_page
+
+    if not keyword:
+        if update.message:
+            # Добавляем кнопку "Назад" при запросе поиска
+            keyboard = [
+                [InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]
+            ]
+            await update.message.reply_text(
+                "Введите слово для поиска (или напишите 'отмена' для возврата):",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+        return
+
+    found_posts = [p for p in posts if keyword in p["text"].lower()]
+    
+    if not found_posts:
+        text = f"🔍 По запросу '{keyword}' ничего не найдено."
+        keyboard = [
+            [InlineKeyboardButton("🔍 Новый поиск", callback_data="search")],
+            [InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]
+        ]
+        
+        if update.message:
+            await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+        else:
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+        return
+
+    total_pages = (len(found_posts) - 1) // POSTS_PER_PAGE + 1
+    start_idx = current_page * POSTS_PER_PAGE
+    end_idx = start_idx + POSTS_PER_PAGE
+    page_posts = found_posts[start_idx:end_idx]
+
+    text = f"🔍 **Результаты поиска по '{keyword}'**\n\n"
+    text += f"📄 Найдено: {len(found_posts)} постов\n\n"
+
+    keyboard = []
+    for post in page_posts:
+        preview = post['text'][:40] + "..." if len(post['text']) > 40 else post['text']
+        preview = preview.replace('*', '★').replace('_', ' ').replace('`', "'")
+        keyboard.append([InlineKeyboardButton(f"📄 {preview}", callback_data=f"post_{post['id']}")])
+
+    nav_buttons = []
+    if current_page > 0:
+        nav_buttons.append(InlineKeyboardButton("⬅️", callback_data=f"search_{current_page-1}"))
+    nav_buttons.append(InlineKeyboardButton(f"{current_page+1}/{total_pages}", callback_data="none"))
+    if current_page < total_pages - 1:
+        nav_buttons.append(InlineKeyboardButton("➡️", callback_data=f"search_{current_page+1}"))
+    
+    if nav_buttons:
+        keyboard.append(nav_buttons)
+
+    keyboard.extend([
+        [InlineKeyboardButton("🔍 Новый поиск", callback_data="search")],
+        [InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]
+    ])
+
+    if update.message:
+        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
+    else:
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
+
 async def show_channel_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Улучшенная информация о канале"""
     query = update.callback_query
@@ -366,7 +492,14 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if data == "main_menu":
             await show_main_menu(update, context)
         elif data == "search":
-            await query.edit_message_text("Введите слово для поиска:")
+            # Добавляем кнопку "Назад" при переходе в поиск
+            keyboard = [
+                [InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]
+            ]
+            await query.edit_message_text(
+                "Введите слово для поиска (или напишите 'отмена' для возврата):",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
         elif data == "channel_info":
             await show_channel_info(update, context)
         elif data.startswith("cat_"):
@@ -390,7 +523,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         log.error(f"Ошибка в обработчике кнопок: {e}")
         await handle_error(update, context)
-
+        
 async def force_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🔄 Обновляем базу постов...")
     await fetch_channel_posts()
