@@ -402,16 +402,8 @@ async def show_post_detail(update: Update, context: ContextTypes.DEFAULT_TYPE, p
     post_text = post['text']
     if len(post_text) > 4000:
         post_text = post_text[:4000] + "...\n\n[Текст обрезан, полную версию смотрите по ссылке]"
-
-    text = f"📄 **Пост**\n\n"
+        
     text += f"{post_text}\n\n"
-    
-    if post.get('categories'):
-        text += f"🏷️ **Категории:** {', '.join(post['categories'])}\n"
-    
-    if post.get('date'):
-        date_str = post['date'].strftime('%Y-%m-%d %H:%M')
-        text += f"📅 **Дата:** {date_str}\n"
     
     text += f"\n🔗 [Открыть в Telegram]({post['link']})"
 
@@ -544,12 +536,12 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if data == "main_menu":
             await show_main_menu(update, context)
         elif data == "search":
-            # Добавляем кнопку "Назад" при переходе в поиск
+            # Добавляем кнопку "Главное меню" при переходе в поиск
             keyboard = [
                 [InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]
             ]
             await query.edit_message_text(
-                "Введите слово для поиска (или напишите 'отмена' для возврата):",
+                "Введите слово для поиска:",
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
         elif data == "channel_info":
