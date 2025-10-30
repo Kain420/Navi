@@ -403,8 +403,7 @@ async def show_post_detail(update: Update, context: ContextTypes.DEFAULT_TYPE, p
     if len(post_text) > 4000:
         post_text = post_text[:4000] + "...\n\n[Текст обрезан, полную версию смотрите по ссылке]"
         
-    text += f"{post_text}\n\n"
-    
+    text = f"{post_text}\n\n"
     text += f"\n🔗 [Открыть в Telegram]({post['link']})"
 
     keyboard = [
