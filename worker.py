@@ -630,75 +630,73 @@ async def webhook_handler(request):
         return web.Response(status=500, text="Error")
 
 async def main():
-    """Основная функция"""
-    # Запускаем Telethon
+    """Основная функция - упрощенная версия для Render"""
     try:
-        await telethon_client.connect()
-        log.info("Telethon client connected")
+        log.info("Запуск приложения...")
         
-        # Тестируем подключение к каналу
-        entity = await telethon_client.get_entity(SOURCE_CHANNEL)
-        log.info(f"Канал доступен: {getattr(entity, 'title', 'Unknown')}")
+        # Создаем приложение Telegram первым делом
+        application = ApplicationBuilder().token(TOKEN).build()
+
+        # Добавляем обработчики
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(CommandHandler("update", force_update))
+        application.add_handler(CommandHandler("test", test_connection))
+        application.add_handler(CallbackQueryHandler(button))
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+        # Запускаем Telethon в фоне без блокировки
+        async def init_telethon():
+            try:
+                await telethon_client.connect()
+                log.info("Telethon client connected")
+                # Быстрая проверка канала
+                entity = await telethon_client.get_entity(SOURCE_CHANNEL)
+                log.info(f"Канал доступен: {getattr(entity, 'title', 'Unknown')}")
+                # Первоначальная загрузка постов
+                await fetch_channel_posts(limit=100)  # Ограничим для быстрого старта
+            except Exception as e:
+                log.error(f"Ошибка инициализации Telethon: {e}")
+
+        # Запускаем инициализацию Telethon в фоне
+        asyncio.create_task(init_telethon())
         
-    except Exception as e:
-        log.error(f"Ошибка подключения Telethon: {e}")
+        # Фоновая задача с увеличенным интервалом для начала
+        asyncio.create_task(periodic_fetch(interval=1800))  # 30 минут для начала
 
-    # Создаем приложение Telegram
-    application = ApplicationBuilder().token(TOKEN).build()
+        # Webhook настройка
+        if RENDER_EXTERNAL_HOSTNAME:
+            webhook_url = f"https://{RENDER_EXTERNAL_HOSTNAME}/webhook"
+            await application.bot.set_webhook(webhook_url)
+            log.info(f"Webhook установлен: {webhook_url}")
 
-    # Добавляем обработчики
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("update", force_update))
-    application.add_handler(CommandHandler("test", test_connection))
-    application.add_handler(CallbackQueryHandler(button))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+        # HTTP сервер - запускаем сразу
+        http_app = web.Application()
+        http_app['bot'] = application.bot
+        http_app['application'] = application
+        
+        http_app.router.add_get('/', health_check)
+        http_app.router.add_post('/webhook', webhook_handler)
 
-    # Фоновая задача
-    periodic_task = asyncio.create_task(periodic_fetch())
-    
-    # Webhook
-    if RENDER_EXTERNAL_HOSTNAME:
-        webhook_url = f"https://{RENDER_EXTERNAL_HOSTNAME}/webhook"
-        await application.bot.set_webhook(webhook_url)
-        log.info(f"Webhook установлен: {webhook_url}")
+        runner = web.AppRunner(http_app)
+        await runner.setup()
+        
+        site = web.TCPSite(runner, '0.0.0.0', PORT)
+        await site.start()
 
-    # HTTP сервер
-    http_app = web.Application()
-    http_app['bot'] = application.bot
-    http_app['application'] = application
-    
-    http_app.router.add_get('/', health_check)
-    http_app.router.add_post('/webhook', webhook_handler)
-
-    runner = web.AppRunner(http_app)
-    await runner.setup()
-    
-    site = web.TCPSite(runner, '0.0.0.0', PORT)
-    await site.start()
-
-    log.info(f"HTTP сервер запущен на порту {PORT}")
-    
-    try:
+        log.info(f"✅ Приложение запущено на порту {PORT}")
+        
+        # Инициализируем приложение Telegram
         await application.initialize()
         await application.start()
-        
-        # Бесконечное ожидание
+        log.info("✅ Telegram Bot запущен")
+
+        # Простой бесконечный цикл
         while True:
             await asyncio.sleep(3600)
+            
     except Exception as e:
-        log.exception("Ошибка в основном цикле")
-    finally:
-        # Корректное завершение
-        periodic_task.cancel()
-        try:
-            await periodic_task
-        except asyncio.CancelledError:
-            pass
-        
-        await application.stop()
-        await application.shutdown()
-        await runner.cleanup()
-        await telethon_client.disconnect()
+        log.exception(f"Критическая ошибка при запуске: {e}")
+        raise
 
 if __name__ == "__main__":
     asyncio.run(main())
