@@ -65,7 +65,7 @@ FETCH_LIMIT = int(os.environ.get("FETCH_LIMIT", "500"))
 FETCH_INTERVAL = int(os.environ.get("FETCH_INTERVAL", "600"))
 POSTS_PER_PAGE = 5
 
-categories = ["биология", "тренировки", "рецепты"]
+categories = ["восстановление", "тренировки", "рецепты"]
 posts: List[Dict[str, Any]] = []
 
 # Инициализация Telethon клиента
@@ -159,9 +159,9 @@ async def fetch_channel_posts(limit: int = FETCH_LIMIT):
             # Если не нашли категории по хештегам, пробуем найти по ключевым словам
             if not categories_found:
                 category_keywords = {
-                    "биология": ["биолог", "клетк", "днк", "ген", "анатом", "физиолог"],
-                    "тренировки": ["трен", "упражн", "фитнес", "спорт", "зарядк", "разминк"],
-                    "рецепты": ["рецепт", "готов", "кухн", "блюдо", "ингредиент", "продукт"]
+                    "восстановление": ["сон", "клетк", "отдых", "физиолог"],
+                    "тренировки": ["трен", "упражн", "гипертрофия", "спорт", "зарядк", "разминк"],
+                    "рецепты": ["рецепт", "похудение", "набор веса", "блюдо", "ингредиент"]
                 }
                 
                 for category, keywords in category_keywords.items():
@@ -332,7 +332,7 @@ async def search_posts(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]
             ]
             await update.message.reply_text(
-                "Введите слово для поиска (или напишите 'отмена' для возврата):",
+                "Введите слово для поиска:",
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
         return
@@ -385,6 +385,58 @@ async def search_posts(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
     else:
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
+
+
+async def show_post_detail(update: Update, context: ContextTypes.DEFAULT_TYPE, post_id: int):
+    """Показываем детали поста"""
+    query = update.callback_query
+    await query.answer()
+
+    post = next((p for p in posts if p['id'] == post_id), None)
+    
+    if not post:
+        await query.edit_message_text("❌ Пост не найден.")
+        return
+
+    # Обрезаем текст если он слишком длинный (ограничение Telegram ~ 4096 символов)
+    post_text = post['text']
+    if len(post_text) > 4000:
+        post_text = post_text[:4000] + "...\n\n[Текст обрезан, полную версию смотрите по ссылке]"
+
+    text = f"📄 **Пост**\n\n"
+    text += f"{post_text}\n\n"
+    
+    if post.get('categories'):
+        text += f"🏷️ **Категории:** {', '.join(post['categories'])}\n"
+    
+    if post.get('date'):
+        date_str = post['date'].strftime('%Y-%m-%d %H:%M')
+        text += f"📅 **Дата:** {date_str}\n"
+    
+    text += f"\n🔗 [Открыть в Telegram]({post['link']})"
+
+    keyboard = [
+        [InlineKeyboardButton("⬅️ Назад", callback_data="main_menu")],
+        [InlineKeyboardButton("📢 Перейти к посту", url=post['link'])]
+    ]
+
+    try:
+        await query.edit_message_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode=ParseMode.MARKDOWN,
+            disable_web_page_preview=False
+        )
+    except Exception as e:
+        log.error(f"Ошибка при отображении поста {post_id}: {e}")
+        # Фолбэк без форматирования
+        clean_text = text.replace('**', '').replace('__', '')
+        await query.edit_message_text(
+            clean_text[:4090] + "..." if len(clean_text) > 4090 else clean_text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            disable_web_page_preview=False
+        )
+
 
 async def show_channel_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Улучшенная информация о канале"""
