@@ -525,6 +525,32 @@ async def test_connection(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ======= ОБРАБОТЧИКИ =======
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик команды /start с описанием бота"""
+    # Отправляем описание бота
+    description = """Приветствую! Я Navi — ваш верный гид в мире информации! 🧭
+
+Я всегда рад помочь, но, как и любому хорошему проводнику, мне иногда нужен привал.
+
+*Мои особенности:*
+
+• *Люблю поспать* 😴  
+Если вы меня не зовете, я могу незаметно уснуть. Ничего личного, просто берегу силы!
+
+• *Мой будильник — это* /start ⏰  
+Чтобы разбудить меня, крикните (точнее, напишите) волшебное слово: /start.  
+Шепот и другие фразы не помогут!
+
+• *Просыпаюсь не спеша* 🐢  
+Мне нужно около 50 секунд, чтобы потянуться, открыть глаза и быть готовым к новым подвигам! Спасибо за ваше терпение!
+
+Возникли проблемы? Напиши моему создателю @kainanasar"""
+
+    await update.message.reply_text(description, parse_mode=ParseMode.MARKDOWN)
+    
+    # Даем небольшую задержку для эффекта "пробуждения"
+    await asyncio.sleep(1)
+    
+    # Показываем главное меню
     await show_main_menu(update, context)
 
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
