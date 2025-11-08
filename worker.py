@@ -259,8 +259,7 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         log.error(f"Ошибка в show_main_menu: {e}")
         await handle_error(update, context)
-        
-async def show_category_posts(update: Update, context: ContextTypes.DEFAULT_TYPE, 
+        async def show_category_posts(update: Update, context: ContextTypes.DEFAULT_TYPE, 
                             category: str, page: int = 0):
     """Показываем посты категории с пагинацией"""
     query = update.callback_query
@@ -280,15 +279,18 @@ async def show_category_posts(update: Update, context: ContextTypes.DEFAULT_TYPE
     end_idx = start_idx + POSTS_PER_PAGE
     page_posts = cat_posts[start_idx:end_idx]
 
-    # УПРОЩЕННЫЙ ТЕКСТ БЕЗ ПРЕДОСМОТРА
+    # Текст сообщения с Markdown-разметкой (жирный шрифт работает)
     text = f"📁 **{category.upper()}**\n\n"
     text += f"Страница {page + 1} из {total_pages}\n"
     text += f"Постов на странице: {len(page_posts)}"
 
     keyboard = []
     for post in page_posts:
-        preview = post['text'][:30] + "..." if len(post['text']) > 50 else post['text']
-        keyboard.append([InlineKeyboardButton(f"{preview}", callback_data=f"post_{post['id']}")])
+        # Очищаем текст от Markdown-разметки для кнопок
+        clean_text = post['text'][:30] + "..." if len(post['text']) > 30 else post['text']
+        # Убираем Markdown-синтаксис
+        clean_text = clean_text.replace('**', '').replace('__', '').replace('`', '')
+        keyboard.append([InlineKeyboardButton(f"📄 {clean_text}", callback_data=f"post_{post['id']}")])
     
     nav_buttons = []
     if page > 0:
@@ -361,9 +363,11 @@ async def search_posts(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     keyboard = []
     for post in page_posts:
-        preview = post['text'][:40] + "..." if len(post['text']) > 40 else post['text']
-        preview = preview.replace('*', '★').replace('_', ' ').replace('`', "'")
-        keyboard.append([InlineKeyboardButton(f"{preview}", callback_data=f"post_{post['id']}")])
+        # Очищаем текст от Markdown-разметки для кнопок
+        clean_text = post['text'][:40] + "..." if len(post['text']) > 40 else post['text']
+        # Убираем Markdown-синтаксис
+        clean_text = clean_text.replace('**', '').replace('__', '').replace('`', "'")
+        keyboard.append([InlineKeyboardButton(f"📄 {clean_text}", callback_data=f"post_{post['id']}")])
 
     nav_buttons = []
     if current_page > 0:
@@ -384,7 +388,7 @@ async def search_posts(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
     else:
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
-
+        
 
 async def show_post_detail(update: Update, context: ContextTypes.DEFAULT_TYPE, post_id: int):
     """Показываем детали поста"""
