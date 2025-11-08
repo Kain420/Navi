@@ -288,7 +288,7 @@ async def show_category_posts(update: Update, context: ContextTypes.DEFAULT_TYPE
     keyboard = []
     for post in page_posts:
         preview = post['text'][:30] + "..." if len(post['text']) > 50 else post['text']
-        keyboard.append([InlineKeyboardButton(f"📄 {preview}", callback_data=f"post_{post['id']}")])
+        keyboard.append([InlineKeyboardButton(f"{preview}", callback_data=f"post_{post['id']}")])
     
     nav_buttons = []
     if page > 0:
@@ -363,7 +363,7 @@ async def search_posts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for post in page_posts:
         preview = post['text'][:40] + "..." if len(post['text']) > 40 else post['text']
         preview = preview.replace('*', '★').replace('_', ' ').replace('`', "'")
-        keyboard.append([InlineKeyboardButton(f"📄 {preview}", callback_data=f"post_{post['id']}")])
+        keyboard.append([InlineKeyboardButton(f"{preview}", callback_data=f"post_{post['id']}")])
 
     nav_buttons = []
     if current_page > 0:
@@ -526,9 +526,9 @@ async def test_connection(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик команды /start с описанием бота"""
     # Отправляем описание бота
-    description = """🌙 Привет! Я — Navi, проводник самого бодрого канала
-    «Sleep Mode Off».
-    Пока канал бодрствует, я отсыпаюсь за двоих — но если понадоблюсь, проснусь мигом (ну, почти).
+    description = """🌙 Привет! Я — Navi, проводник самого бодрого канала 
+«Sleep Mode Off».
+Пока канал бодрствует, я отсыпаюсь за двоих — но если понадоблюсь, проснусь мигом (ну, почти).
 
 ⚙ Как со мной общаться:
 • Если я заснул — разбуди меня командой /start
