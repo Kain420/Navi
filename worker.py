@@ -159,9 +159,9 @@ async def fetch_channel_posts(limit: int = FETCH_LIMIT):
             # Если не нашли категории по хештегам, пробуем найти по ключевым словам
             if not categories_found:
                 category_keywords = {
-                    "восстановление": ["сон", "клетк", "отдых", "физиолог"],
-                    "тренировки": ["трен", "упражн", "гипертрофия", "спорт", "зарядк", "разминк"],
-                    "рецепты": ["рецепт", "похудение", "набор веса", "блюдо", "ингредиент"]
+                    "восстановление": ["сон", "отдых", "физиология"],
+                    "тренировки": ["трентровки", "упражнения", "гипертрофия", "спорт", "зарядка", "разминка"],
+                    "рецепты": ["рецепт", "похудение", "набор веса", "блюдо", "ингредиенты"]
                 }
                 
                 for category, keywords in category_keywords.items():
@@ -259,7 +259,7 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         log.error(f"Ошибка в show_main_menu: {e}")
         await handle_error(update, context)
-
+        
 async def show_category_posts(update: Update, context: ContextTypes.DEFAULT_TYPE, 
                             category: str, page: int = 0):
     """Показываем посты категории с пагинацией"""
@@ -280,15 +280,14 @@ async def show_category_posts(update: Update, context: ContextTypes.DEFAULT_TYPE
     end_idx = start_idx + POSTS_PER_PAGE
     page_posts = cat_posts[start_idx:end_idx]
 
+    # УПРОЩЕННЫЙ ТЕКСТ БЕЗ ПРЕДОСМОТРА
     text = f"📁 **{category.upper()}**\n\n"
-    for i, post in enumerate(page_posts, 1):
-        preview = post['text'][:100] + "..." if len(post['text']) > 100 else post['text']
-        text += f"{start_idx + i}. {preview}\n\n"
-    text += f"Страница {page + 1} из {total_pages}"
+    text += f"Страница {page + 1} из {total_pages}\n"
+    text += f"Постов на странице: {len(page_posts)}"
 
     keyboard = []
     for post in page_posts:
-        preview = post['text'][:30] + "..." if len(post['text']) > 30 else post['text']
+        preview = post['text'][:30] + "..." if len(post['text']) > 50 else post['text']
         keyboard.append([InlineKeyboardButton(f"📄 {preview}", callback_data=f"post_{post['id']}")])
     
     nav_buttons = []
@@ -527,23 +526,16 @@ async def test_connection(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик команды /start с описанием бота"""
     # Отправляем описание бота
-    description = """Приветствую! Я Navi — ваш верный гид в мире информации! 🧭
+    description = """🌙 Привет! Я — Navi, проводник самого бодрого канала «Sleep Mode Off».
+Пока канал бодрствует, я отсыпаюсь за двоих — но если понадоблюсь, проснусь мигом (ну, почти).
 
-Я всегда рад помочь, но, как и любому хорошему проводнику, мне иногда нужен привал.
+⚙ Как со мной общаться:
+• Если я заснул — разбуди меня командой /start
+• На пробуждение мне нужно около 50 секунд — всё-таки сон важен даже для ботов
+• После этого я снова бодр и готов помогать 💡
 
-*Мои особенности:*
-
-• *Люблю поспать* 😴  
-Если вы меня не зовете, я могу незаметно уснуть. Ничего личного, просто берегу силы!
-
-• *Мой будильник — это* /start ⏰  
-Чтобы разбудить меня, крикните (точнее, напишите) волшебное слово: /start.  
-Шепот и другие фразы не помогут!
-
-• *Просыпаюсь не спеша* 🐢  
-Мне нужно около 50 секунд, чтобы потянуться, открыть глаза и быть готовым к новым подвигам! Спасибо за ваше терпение!
-
-Возникли проблемы? Напиши моему создателю @kainanasar"""
+Если вдруг я усну глубже обычного —
+позови моего создателя: @kainanasar"""
 
     await update.message.reply_text(description, parse_mode=ParseMode.MARKDOWN)
     
