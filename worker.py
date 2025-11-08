@@ -290,7 +290,7 @@ async def show_category_posts(update: Update, context: ContextTypes.DEFAULT_TYPE
         preview = post['text'][:30] + "..." if len(post['text']) > 30 else post['text']
         # Очищаем Markdown-разметку для кнопок
         clean_text = preview.replace('**', '').replace('__', '').replace('`', '')
-        keyboard.append([InlineKeyboardButton(f"📄 {clean_text}", callback_data=f"post_{post['id']}")])
+        keyboard.append([InlineKeyboardButton(f"{clean_text}", callback_data=f"post_{post['id']}")])
     
     nav_buttons = []
     if page > 0:
@@ -359,7 +359,7 @@ async def search_posts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     page_posts = found_posts[start_idx:end_idx]
 
     text = f"🔍 **Результаты поиска по '{keyword}'**\n\n"
-    text += f"📄 Найдено: {len(found_posts)} постов\n\n"
+    text += f"Найдено: {len(found_posts)} постов\n\n"
 
     keyboard = []
     for post in page_posts:
@@ -367,7 +367,7 @@ async def search_posts(update: Update, context: ContextTypes.DEFAULT_TYPE):
         clean_text = post['text'][:40] + "..." if len(post['text']) > 40 else post['text']
         # Убираем Markdown-синтаксис
         clean_text = clean_text.replace('**', '').replace('__', '').replace('`', "'")
-        keyboard.append([InlineKeyboardButton(f"📄 {clean_text}", callback_data=f"post_{post['id']}")])
+        keyboard.append([InlineKeyboardButton(f"{clean_text}", callback_data=f"post_{post['id']}")])
 
     nav_buttons = []
     if current_page > 0:
