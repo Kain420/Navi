@@ -259,7 +259,8 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         log.error(f"Ошибка в show_main_menu: {e}")
         await handle_error(update, context)
-        async def show_category_posts(update: Update, context: ContextTypes.DEFAULT_TYPE, 
+        
+async def show_category_posts(update: Update, context: ContextTypes.DEFAULT_TYPE, 
                             category: str, page: int = 0):
     """Показываем посты категории с пагинацией"""
     query = update.callback_query
@@ -279,17 +280,16 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     end_idx = start_idx + POSTS_PER_PAGE
     page_posts = cat_posts[start_idx:end_idx]
 
-    # Текст сообщения с Markdown-разметкой (жирный шрифт работает)
+    # УПРОЩЕННЫЙ ТЕКСТ БЕЗ ПРЕДОСМОТРА
     text = f"📁 **{category.upper()}**\n\n"
     text += f"Страница {page + 1} из {total_pages}\n"
     text += f"Постов на странице: {len(page_posts)}"
 
     keyboard = []
     for post in page_posts:
-        # Очищаем текст от Markdown-разметки для кнопок
-        clean_text = post['text'][:30] + "..." if len(post['text']) > 30 else post['text']
-        # Убираем Markdown-синтаксис
-        clean_text = clean_text.replace('**', '').replace('__', '').replace('`', '')
+        preview = post['text'][:30] + "..." if len(post['text']) > 30 else post['text']
+        # Очищаем Markdown-разметку для кнопок
+        clean_text = preview.replace('**', '').replace('__', '').replace('`', '')
         keyboard.append([InlineKeyboardButton(f"📄 {clean_text}", callback_data=f"post_{post['id']}")])
     
     nav_buttons = []
