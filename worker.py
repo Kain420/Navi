@@ -140,77 +140,77 @@ async def fetch_channel_posts(limit: int = FETCH_LIMIT):
                 log.warning(f"Ошибка формирования ссылки для поста {message.id}: {e}")
                 link = f"https://t.me/unknown/{message.id}"
             
-            # Улучшенное извлечение категорий из хештегов
+            # # Улучшенное извлечение категорий из хештегов
 
 
-            categories_found = []
-
-            # Извлечение хештегов (включая кириллицу)
-            hashtags = re.findall(r'#([^\s#]+)', text_lower)
-
-            # Сопоставление категорий по хештегам
-            for hashtag in hashtags:
-                hashtag_lower = hashtag.lower()
-                for category in categories:
-                    if category.lower() in hashtag_lower:
-                        categories_found.append(category)
-                        break  # Прекращаем проверку для этого хештега
-
-            # Если не нашли по хештегам — ищем по ключевым словам в тексте
-            if not categories_found:
-                category_keywords = {
-                    "восстановление": [
-                        "сон", "отдых", "физиология", "восстановление",
-                        "релакс", "расслабление"
-                    ],
-                    "тренировки": [
-                        "тренировки", "тренировка", "упражнения", "упражнение",
-                        "гипертрофия", "спорт", "зарядка", "разминка",
-                        "фитнес", "качалка", "тренируюсь"
-                    ],
-                    "рецепты": [
-                        "рецепт", "рецепты", "похудение", "набор веса",
-                        "блюдо", "ингредиенты", "кулинария",
-                        "готовка", "еда", "питание", "диета"
-                    ]
-                }
-
-                for category, keywords in category_keywords.items():
-                    if any(keyword in text_lower for keyword in keywords):
-                        categories_found.append(category)
-
-            # (опционально)
-            categories_found = list(set(categories_found))  # на случай повт
-            
             # categories_found = []
-            # for category in categories:
-            #     # Ищем хештеги в разных форматах
-            #     patterns = [
-            #         f"#{category}\\b",
-            #         f"#{category}[^\\w]",
-            #         f"\\b{category}\\b"  # также ищем просто слова
-            #     ]
-                
-            #     for pattern in patterns:
-            #         if re.search(pattern, text_lower, re.IGNORECASE):
-            #             if category not in categories_found:
-            #                 categories_found.append(category)
-            #                 break
-            
-            # # Если не нашли категории по хештегам, пробуем найти по ключевым словам
+
+            # # Извлечение хештегов (включая кириллицу)
+            # hashtags = re.findall(r'#([^\s#]+)', text_lower)
+
+            # # Сопоставление категорий по хештегам
+            # for hashtag in hashtags:
+            #     hashtag_lower = hashtag.lower()
+            #     for category in categories:
+            #         if category.lower() in hashtag_lower:
+            #             categories_found.append(category)
+            #             break  # Прекращаем проверку для этого хештега
+
+            # # Если не нашли по хештегам — ищем по ключевым словам в тексте
             # if not categories_found:
             #     category_keywords = {
-            #         "восстановление": ["сон", "отдых", "физиология"],
-            #         "тренировки": ["тренировки", "упражнения", "гипертрофия", "спорт", "зарядка", "разминка"],
-            #         "рецепты": ["рецепт", "похудение", "набор веса", "блюдо", "ингредиенты"]
+            #         "восстановление": [
+            #             "сон", "отдых", "физиология", "восстановление",
+            #             "релакс", "расслабление"
+            #         ],
+            #         "тренировки": [
+            #             "тренировки", "тренировка", "упражнения", "упражнение",
+            #             "гипертрофия", "спорт", "зарядка", "разминка",
+            #             "фитнес", "качалка", "тренируюсь"
+            #         ],
+            #         "рецепты": [
+            #             "рецепт", "рецепты", "похудение", "набор веса",
+            #             "блюдо", "ингредиенты", "кулинария",
+            #             "готовка", "еда", "питание", "диета"
+            #         ]
             #     }
-                
+
             #     for category, keywords in category_keywords.items():
-            #         for keyword in keywords:
-            #             if keyword in text_lower:
-            #                 if category not in categories_found:
-            #                     categories_found.append(category)
-            #                 break
+            #         if any(keyword in text_lower for keyword in keywords):
+            #             categories_found.append(category)
+
+            # # (опционально)
+            # categories_found = list(set(categories_found))  # на случай повт
+            
+            categories_found = []
+            for category in categories:
+                # Ищем хештеги в разных форматах
+                patterns = [
+                    f"#{category}\\b",
+                    f"#{category}[^\\w]",
+                    f"\\b{category}\\b"  # также ищем просто слова
+                ]
+                
+                for pattern in patterns:
+                    if re.search(pattern, text_lower, re.IGNORECASE):
+                        if category not in categories_found:
+                            categories_found.append(category)
+                            break
+            
+            # Если не нашли категории по хештегам, пробуем найти по ключевым словам
+            if not categories_found:
+                category_keywords = {
+                    "восстановление": ["сон", "отдых", "физиология"],
+                    "тренировки": ["тренировки", "упражнения", "гипертрофия", "спорт", "зарядка", "разминка"],
+                    "рецепты": ["рецепт", "похудение", "набор веса", "блюдо", "ингредиенты"]
+                }
+                
+                for category, keywords in category_keywords.items():
+                    for keyword in keywords:
+                        if keyword in text_lower:
+                            if category not in categories_found:
+                                categories_found.append(category)
+                            break
 
             new_posts.append({
                 "id": message.id,
