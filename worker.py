@@ -65,7 +65,7 @@ FETCH_LIMIT = int(os.environ.get("FETCH_LIMIT", "500"))
 FETCH_INTERVAL = int(os.environ.get("FETCH_INTERVAL", "600"))
 POSTS_PER_PAGE = 5
 
-categories = ["восстановление", "тренировки", "рецепты"]
+categories = ["восстановление", "тренировки", "питание"]
 posts: List[Dict[str, Any]] = []
 
 # Инициализация Telethon клиента
@@ -156,20 +156,20 @@ async def fetch_channel_posts(limit: int = FETCH_LIMIT):
                             categories_found.append(category)
                             break
             
-            # Если не нашли категории по хештегам, пробуем найти по ключевым словам
-            if not categories_found:
-                category_keywords = {
-                    "восстановление": ["сон", "отдых", "физиология"],
-                    "тренировки": ["трентровки", "упражнения", "гипертрофия", "спорт", "зарядка", "разминка"],
-                    "рецепты": ["рецепт", "похудение", "набор веса", "блюдо", "ингредиенты"]
-                }
+            # # Если не нашли категории по хештегам, пробуем найти по ключевым словам
+            # if not categories_found:
+            #     category_keywords = {
+            #         "восстановление": ["сон", "отдых", "физиология"],
+            #         "тренировки": ["трентровки", "упражнения", "гипертрофия", "спорт", "зарядка", "разминка"],
+            #         "рецепты": ["рецепт", "похудение", "набор веса", "блюдо", "ингредиенты"]
+            #     }
                 
-                for category, keywords in category_keywords.items():
-                    for keyword in keywords:
-                        if keyword in text_lower:
-                            if category not in categories_found:
-                                categories_found.append(category)
-                            break
+            #     for category, keywords in category_keywords.items():
+            #         for keyword in keywords:
+            #             if keyword in text_lower:
+            #                 if category not in categories_found:
+            #                     categories_found.append(category)
+            #                 break
 
             new_posts.append({
                 "id": message.id,
