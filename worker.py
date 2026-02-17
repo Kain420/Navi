@@ -75,9 +75,8 @@ telethon_client = TelegramClient(
     API_HASH
 )
 
-# ======= УЛУЧШЕННЫЕ ФУНКЦИИ =======
+# ПОЛУЧЕНИЕ ПОСТОВ ИЗ КАНАЛА ЧЕРЕЗ TELETHON
 async def fetch_channel_posts(limit: int = FETCH_LIMIT):
-    """Улучшенное получение постов из канала через Telethon"""
     global posts
     new_posts: List[Dict[str, Any]] = []
     
@@ -159,9 +158,9 @@ async def fetch_channel_posts(limit: int = FETCH_LIMIT):
             # # Если не нашли категории по хештегам, пробуем найти по ключевым словам
             # if not categories_found:
             #     category_keywords = {
-            #         "восстановление": ["сон", "отдых", "физиология"],
-            #         "тренировки": ["трентровки", "упражнения", "гипертрофия", "спорт", "зарядка", "разминка"],
-            #         "рецепты": ["рецепт", "похудение", "набор веса", "блюдо", "ингредиенты"]
+            #         "восстановление": ["сон", "отдых", "физиология", "восстановление"],
+            #         "тренировки": ["тренировки", "упражнения", "гипертрофия", "спорт", "зарядка", "разминка"],
+            #         "рецепты": ["рецепт", "похудение", "набор веса", "блюдо", "ингредиенты", "питание"]
             #     }
                 
             #     for category, keywords in category_keywords.items():
@@ -202,9 +201,9 @@ async def fetch_channel_posts(limit: int = FETCH_LIMIT):
         log.exception(f"Критическая ошибка при получении постов: {e}")
         # Не заменяем посты тестовыми данными, оставляем существующие
         log.info("Сохраняем существующие посты из-за ошибки")
-
+        
+# ГЛАВНОЕ МЕНЮ СО СТАТИСТИКОЙ
 async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Главное меню с улучшенной статистикой"""
     try:
         stats = {}
         uncategorized = 0
@@ -262,7 +261,7 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
 async def show_category_posts(update: Update, context: ContextTypes.DEFAULT_TYPE, 
                             category: str, page: int = 0):
-    """Показываем посты категории с пагинацией"""
+    # ПОКАЗЫВАЕМ ПОСТЫ КАТЕГОРИИ С ПАГИНАЦИЕЙ
     query = update.callback_query
     await query.answer()
     
@@ -304,9 +303,8 @@ async def show_category_posts(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
 
-
+# ПОИСК ПОСТОВ И КНОПКА НАЗАД
 async def search_posts(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Поиск постов с кнопкой Назад"""
     if update.message:
         keyword = update.message.text.lower().strip()
         
@@ -389,9 +387,8 @@ async def search_posts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
         
-
+# ПОКАЗЫВАЕМ ДЕТАЛИ ПОСТА
 async def show_post_detail(update: Update, context: ContextTypes.DEFAULT_TYPE, post_id: int):
-    """Показываем детали поста"""
     query = update.callback_query
     await query.answer()
 
@@ -431,9 +428,8 @@ async def show_post_detail(update: Update, context: ContextTypes.DEFAULT_TYPE, p
             disable_web_page_preview=False
         )
 
-
+# ИНФОРМАЦИЯ О КАНАЛЕ
 async def show_channel_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Улучшенная информация о канале"""
     query = update.callback_query
     await query.answer()
     
@@ -487,7 +483,7 @@ async def show_channel_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.MARKDOWN
         )
 
-# ======= ДОПОЛНИТЕЛЬНЫЕ ФУНКЦИИ =======
+# ДОПОЛНИТЕЛЬНЫЕ ФУНКЦИИ
 async def handle_error(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработка ошибок"""
     error_text = "❌ Произошла ошибка. Попробуйте позже."
@@ -496,9 +492,9 @@ async def handle_error(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.callback_query.edit_message_text(error_text)
     else:
         await update.message.reply_text(error_text)
-
+        
+# ТЕСТИРОВАНИЕ ПОДКЛЮЧЕНИЯ К КАНАЛУ
 async def test_connection(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Тестирование подключения к каналу"""
     try:
         await update.message.reply_text("🔍 Тестируем подключение к каналу...")
         
@@ -526,9 +522,8 @@ async def test_connection(update: Update, context: ContextTypes.DEFAULT_TYPE):
         error_text = f"❌ **Ошибка подключения:** {str(e)}"
         await update.message.reply_text(error_text, parse_mode=ParseMode.MARKDOWN)
 
-# ======= ОБРАБОТЧИКИ =======
+# ОБРАБОТЧИКИ КОМАНДЫ /START С ОПИСАНИЕМ БОТА
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик команды /start с описанием бота"""
     # Отправляем описание бота
     description = """🌙 Привет! Я — Navi, проводник самого бодрого канала 
 «Sleep Mode Off».
@@ -608,7 +603,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await search_posts(update, context)
 
-# ======= ФОНОВЫЕ ЗАДАЧИ =======
+# ФОНОВЫЕ ЗАДАЧИ
 async def periodic_fetch(interval: int = FETCH_INTERVAL):
     log.info("Фоновая задача обновления постов запущена")
     try:
@@ -628,7 +623,7 @@ async def periodic_fetch(interval: int = FETCH_INTERVAL):
     except Exception as e:
         log.error(f"Критическая ошибка в фоновой задаче: {e}")
 
-# ======= WEBHOOK И HTTP СЕРВЕР =======
+# WEBHOOK И HTTP СЕРВЕР
 async def health_check(request):
     return web.Response(text="OK")
 
@@ -642,8 +637,8 @@ async def webhook_handler(request):
         log.exception("Ошибка в webhook_handler")
         return web.Response(status=500, text="Error")
 
+#ОСНОВНАЯ ФУНКЦИЯ - УПРОЩЕННАЯ ВЕРСИЯ ДЛЯ RENDER
 async def main():
-    """Основная функция - упрощенная версия для Render"""
     try:
         log.info("Запуск приложения...")
         
