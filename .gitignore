@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+.venv
+.env/
+venv/
+*.db
+
+# Replit
+.replit
+.pythonlibs/
+*.sqlite3
+
+# OS files
+.DS_Store
+Thumbs.db
