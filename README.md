@@ -1,8 +1,12 @@
+*English · [Русский](README.ru.md)*
+
 # Navi — Telegram bot for channel navigation
 
 Telegram bot that indexes the posts of a single channel and provides navigation
 over them: fixed-category browsing, full-text search and paginated access to the
 archive through an inline-button interface.
+
+## Overview
 
 The bot is tailored to one specific channel — categories and the greeting are
 adapted to its topic; it is not a generic template.
@@ -49,7 +53,29 @@ Set via environment variables (required unless noted):
 | `PORT` | HTTP port (default `8080`) |
 | `FETCH_LIMIT` | Max posts fetched per refresh (default `500`) |
 
-## Run
+## Repository structure
+
+```
+.
+├── worker.py            bot, HTTP server and background refresh task
+├── Procfile             process declaration for the host
+├── runtime.txt          Python version for the host
+├── requirements.txt
+├── .gitignore
+├── LICENSE
+├── README.md
+└── README.ru.md
+```
+
+## Stack
+
+- Python 3.11
+- python-telegram-bot 20.7
+- Telethon 1.28.5
+- aiohttp 3.9.1
+- Deployment: Render (webhook mode)
+
+## Running
 
 ```bash
 pip install -r requirements.txt
@@ -60,10 +86,6 @@ python worker.py
 registers its webhook at `https://<RENDER_EXTERNAL_HOSTNAME>/webhook` and loads an
 initial batch of posts.
 
-## Stack
+## License
 
-- Python 3.11
-- python-telegram-bot 20.7
-- Telethon 1.28.5
-- aiohttp 3.9.1
-- Deployment: Render (webhook mode)
+MIT — see [LICENSE](LICENSE).
